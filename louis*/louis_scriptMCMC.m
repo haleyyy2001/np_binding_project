@@ -1,0 +1,97 @@
+% -------------------------------------------------------------------------
+% Algorithm to fit data by estimating parameters with MCMC.
+% -------------------------------------------------------------------------
+%
+% This code estimates the parameters for the model through an MCMC
+% simulation. There are 3 possible sets of parameters to fit:
+% (1) KD, kp, kappa;
+% (2) KD, kp, kappa, mu;
+% (3) KD, pi, mu, alpha, C;
+% The model fitted here is averaged (i.e. does not consider the
+% distributions).
+% The MCMC is initially run with the set of parameters derived from
+% estimations of the activation function. It is afterwards re-run with the
+% parameters that generated the best fit in the first MCMC estimation.
+%
+% In the model considered here, we account for the number of engaged TCR,
+% keeping record of serial engagement.
+% 
+% The data corresponding to both radii is simultaneously fit, to make sure
+% that all parameters are consistent throughout the experiments.
+% -------------------------------------------------------------------------
+
+clear data model params options
+
+% Cluster Paths
+addpath(['../project_code/mcmcstat-master']);
+addpath('ifngProd','dist_fitting','dyn_models','dyn_models_NP','zeroNewton','insProb_functions');
+
+data = [[repmat(14,28,1), get_ifndata(14)];[repmat(20,21,1), get_ifndata(20)]];
+data20 = [[repmat(20,21,1), get_ifndata(20)]];
+data14 = [repmat(14,28,1), get_ifndata(14)];
+data14(1:17,:) = [];
+data = data14;
+
+pp = ['louis_results/Continuation_Result'];                  % Make sure path in louis_errorFunction is the same.
+
+%chain = load([pp,'fig_nsim15000date07-Feb-2022/5params/chain.txt']);
+%sschain = load([pp,'fig_nsim15000date07-Feb-2022/5params/sschain.txt']);
+
+%param0 = unique(chain(find(sschain==min(sschain)),:),'rows');
+%param0 = [100*rand, 15*rand+5, 10*rand, 20*rand, 100*rand];
+%param0 = [20,8,8,8,1];
+
+
+%% Initial Parameter Values
+
+%param0 = [19, 0.5, 9.9, 0.18, 4.7]; %[19, 0.5, 9.9, 0.18, 4.7, 5.0]; % [kd, {pt; KP, N}, mu, alpha, C, (angle)]
+param0 = [19, 8.060, 0.388, 5.93, 15];
+
+%param0 = [19, 0.5, 9.9, 0.18, 4.7, 1]; % (kd, pt, mu, alpha, C, KD) where KD is CA passage ratio.
+
+% Computation of initial variance
+ss0 = louis_errorFunction(param0,data);
+
+%% Settings for MCMC
+params = {
+    {'kd',param0(1),eps,100}
+    
+    %{'pt',param0(2),eps,1}
+    %{'phi',param0(1),eps,3000}
+    %{'b',param0(2),eps,3000}
+    
+    {'mu',param0(2),5,20}                % (5, 20)
+    {'alph',param0(3),eps,1}            % (eps,10); If using hill function set alpha = (eps,5)
+    {'C',param0(4),eps,1e3}               % (eps,20)
+    {'KD',param0(5),eps,1e3}
+    };
+
+% Error settings
+model.sigma2 = ss0;%/(length(data.ydata(:,1))-1);
+model.ssfun = @louis_errorFunction;
+
+% Simulation settings
+nsim=1500; %1500;
+options.nsimu = nsim;
+options.updatesigma = 1;
+options.method = 'dram';
+%options.savesize = 500;
+%options.savedir = './TEMP_MCMC/';
+%% Run MCMC algorithm
+[result, chain, s2chain, sschain] = mcmcrun(model,data,params,options);
+
+%% Save MCMC algorithm results
+mkdir([pp,'fig_nsim',num2str(nsim),'date',date,'/'])
+filename = [pp,'fig_nsim',num2str(nsim),'date',date,'/results.mat'];
+%save(filename,'result','chain','s2chain','sschain')
+%--------------------------------------------------------------------------
+% For Saving on the Cluster (must save in --ascii format)
+
+chain_name = [pp,'fig_nsim',num2str(nsim),'date',date,'/chain','.txt'];
+ss_name = [pp,'fig_nsim',num2str(nsim),'date',date,'/sschain','.txt'];
+s2_name = [pp,'fig_nsim',num2str(nsim),'date',date,'/s2chain','.txt'];
+
+save(chain_name,'chain','-ascii')
+save(ss_name,'sschain','-ascii')
+save(s2_name,'sschain','-ascii')
+

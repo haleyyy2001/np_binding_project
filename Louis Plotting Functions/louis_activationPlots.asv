@@ -1,0 +1,256 @@
+%% Initialize Variables and Parameters
+% Plots to compare predicted versus experimental IFNg dose-response curves.
+% Also produce plots of MCMC statistics.
+
+clear all
+
+% Variables
+
+data = [[repmat(14,28,1), get_ifndata(14)];[repmat(20,21,1), get_ifndata(20)]];
+pp = ['louis_results/' ];
+ 
+chain = load([pp,'fig_nsim15000date24-Jan-2023/chain1.txt']);
+sschain = load([pp,'fig_nsim15000date24-Jan-2023/sschain1.txt']);
+
+params = unique(chain(find(sschain==min(sschain)),:),'rows');
+
+disp('Params')
+disp(params)
+
+
+% Parameters
+
+if length(params) == 5
+    kd = params(1); %24.7252;
+    mu = params(2); %8.7209;
+    alph = params(3); %0.3883;
+    C = params(4); %4.3013;
+    KD = params(5); %0.6;
+    
+    pt=1;
+    
+    par_lbls = {'kd','mu','alph','C','KD'};
+    
+elseif length(params) == 4
+    kd = params(1);
+    mu = params(2);
+    alph = params(3);
+    C = params(4);
+    
+    KD=1;
+    pt=1;
+    
+    par_lbls = {'kd','mu','alph','C'};
+    
+else
+    kd = params(1); %24.7252;
+    pt = params(2); %0.5;
+    mu = params(3); %8.7209;
+    alph = params(4); %0.3883;
+    C = params(5); %4.3013;
+    KD = params(6); %0.6;
+    
+    par_lbls = {'kd','pt','mu','alph','C','KD'};
+end
+
+
+
+theta_deg = 45;
+
+valence14 = [8,11,14,31,54];
+valence20 = [9,13,61,210];
+
+ifng_params = [mu,alph,C];
+pho_params = pt;
+
+y_exp = [];
+y_pred = [];
+doses = [];
+
+f1 = figure(1);
+
+ifig = 1;
+
+cols = 0.8*cool(length(valence14));
+vs=1;
+
+for i = 1:length(data(:,1))
+    
+    r = data(i,1);
+    v = data(i,2);
+    d = data(i,3);
+    
+    np_params = [r,v,d];
+    
+    y_exp = [y_exp, data(i,4)];
+    for v=[8,11,14,31,54]
+    y2 = louis_activationFunction(kd,KD,theta_deg,np_params,ifng_params,pho_params,pp);
+    y_pred = [y_pred, y2];
+
+    doses = [doses,d];
+    
+    if i == length(data(:,1))
+        subplot(1,2,2)
+        plot(log10(doses), y_exp,'o--','color',cols(vs,:),'DisplayName',[num2str(v)],'Linewidth',1.5)
+        plot(log10(doses), y_pred,'-s','color',cols(vs,:),'DisplayName',['Pred-',num2str(v)],'Linewidth',1.5)
+   
+        break
+        
+    elseif r ~= data(i+1,1)
+        subplot(1,2,1)
+        hold on
+        plot(log10(doses), y_exp,'o--','color',cols(vs,:),'DisplayName',[num2str(v)],'Linewidth',1.5)
+        plot(log10(doses), y_pred, '-s','color',cols(vs,:),'DisplayName', ['Pred-',num2str(v)],'Linewidth',1.5)
+        
+        y_exp = [];
+        y_pred = [];
+        doses = [];
+        
+        hold off
+        grid on
+        xlabel('NP Concentration (x10^{11} NP / ml)')
+        xticklabels({'10^{-1}','10^0','10^1','10^2'})
+        ylabel('IFNg Production (ng/ml)')
+        title(['r=',num2str(r),' nm'])
+        leg = legend('Location','Best outside');
+        title(leg,'Valence');
+        set(gca,'Linewidth',2,'Fontsize',16)
+        
+        ifig = 2;
+        vs = 1;
+        
+    elseif v ~= data(i+1,2)
+        subplot(1,2,ifig)
+        hold on
+        plot(log10(doses), y_exp,'o--','color',cols(vs,:),'DisplayName',[num2str(v)],'Linewidth',1.5)
+        plot(log10(doses), y_pred, '-s','color',cols(vs,:),'DisplayName',['Pred-',num2str(v)],'Linewidth',1.5)
+        
+        y_exp = [];
+        y_pred = [];
+        doses = [];
+        vs = vs + 1;
+    end
+
+end
+hold off
+grid on
+xlabel('NP Concentration (x10^{11} NP / ml)')
+xticklabels({'10^{-1}','10^0','10^1','10^2'})
+ylabel('IFNg Production (ng/ml)')
+title(['r=',num2str(r),' nm'])
+leg = legend('Location','best outside');
+title(leg,'Valence')
+set(gca,'Linewidth',2,'Fontsize',16)
+
+ax1 = subplot(1,2,1);
+tex = text(1.7,2.8,'\leftarrow','FontSize',22,'Color','r');
+tex = text(1.7,0.75,'\leftarrow','FontSize',22,'Color','r');
+xline(1.60206,'r--','HandleVisibility','off');
+ax2 = subplot(1,2,2);
+
+AddLetters2Plots({ax1,ax2},{'A',''},'Hshift',-0.07,'Vshift',-0.075,'FontSize',22) 
+AddLetters2Plots({ax1,ax2},{'','B'},'Hshift',-0.07,'Vshift',-0.065,'FontSize',22)
+ 
+f1.Units='centimeters';
+f1.Position=[1 10 45 10];
+
+% Posterior distribution estimate
+%{
+figure()
+for i=1:length(params)
+    subplot(2,3,i)
+    histogram(chain(5e3:end,i),'NumBins',100)
+    xline(params(i))
+    xlabel('Parameter value')
+    ylabel('Frequency')
+    title(par_lbls{i})
+end
+
+k=0;
+
+% Parameter correlation
+figure()
+for i=2:length(params)
+    for j=1:i-1
+        subplot(6,6,6*k+j)
+        plot(chain(5e3:end,i),chain(5e3:end,j),'.')
+        xlabel(par_lbls{i})
+        ylabel(par_lbls{j})
+    end
+    k=k+1;
+end
+
+% Time series
+figure()
+for i=1:length(params)
+    subplot(2,3,i)
+    plot([1:length(chain)], chain(:,i))
+    xlabel('nSim')
+    ylabel(par_lbls{i})
+end
+
+
+%Autocorrelation
+acl=100;
+
+figure()
+for i=1:length(params)
+    [acf, lags] = autocorr(chain(:,i),'NumLags',length(chain)-1);
+    subplot(2,3,i)
+    plot(lags, acf)
+    xlabel('Lags')
+    ylabel('Acf')
+    title(par_lbls{i})
+end
+%}
+
+%% IFNg versus pMHC density
+%{
+f2 = figure(2);
+vs = 1;
+ifig=1;
+cols = cool(length(data));
+v_prev=0;
+pD = [];
+
+
+for i = 1:length(data(:,1))
+    
+    r = data(i,1);
+    v = data(i,2);
+    d = data(i,3);
+    
+    np_params = [r,v,d];
+    
+    if v~= v_prev & v_prev~=0
+        hold on
+        plot(log10(doses), y_exp,'o--','DisplayName',['Exp-',num2str(v)],'Linewidth',1.5)
+        y_exp = [];
+        doses = [];
+        v_prev=v;
+        
+        pD = [pD, v / 4*pi*r^2];
+    end
+    
+    y_exp = [y_exp, data(i,4)];
+    
+    pMHC_density = v / 4*pi*r^2;
+    doses = [doses,d];
+    v_prev=v;
+        
+
+end
+
+[pD_sorted, I] = sort(pD);
+hold off
+grid on
+%cols = 0.5*parula(length(pD));
+cols = repmat(linspace(0,0.5,8)',1,3);
+colororder(cols(I,:))
+xlabel('NP Concentration (x10^{11} NP / ml)')
+xticklabels({'10^{-1}','10^0','10^1','10^2'})
+ylabel('IFNg Production (ng/ml)')
+title(['r=',num2str(r)])
+legend('Location','best outside')
+set(gca,'Linewidth',2,'Fontsize',16)
+%}

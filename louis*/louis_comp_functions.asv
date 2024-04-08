@@ -1,0 +1,296 @@
+theta_deg=45;
+theta=45;
+dtcr=10;
+rnbh=dtcr;
+ntcr=20;
+kd=25;
+pp=['louis_results/'];
+r=14;
+for v=[8,11,54]
+    louis_comp_function(r,v,theta_deg,dtcr,rnbh,ntcr,kd,pp)
+end
+
+function [avgs_contAreaModel] = louis_comp_function(r,v,theta_deg,dtcr,rnbh,ntcr,kd,pp)
+% -------------------------------------------------------------------------
+% SCRIPT COMPREHENSIVE CODE FOR FIT
+% Full code to test NP induced T-cell activation model. The model is
+% implemented in several steps.
+% 
+%   I. Computation of the insertion probability
+%       Determine insertion probability in the pMHC/TCR, and NP/TCRnc
+%       settings. Determine the distribution of covered TCR per NP. 
+%       This section needs only be run if it has not been run already.
+%       Otherwise, only need to load existent documents.
+% 
+%  II. Model steady states
+%       From the results in I., compute the steady states of the NP/TCRnc
+%       and TCR/pMHC models. 
+% 
+% III. Distribution fitting
+%       From the distributions found in I. and the steady states computed
+%       in II., estimate the distribution of the number of bound TCR per
+%       TCRnc. 
+% 
+%  IV. 
+% 
+% 
+% Variables
+%   - r: radius of the considered NP,
+%   - v: valence of the considered NP,
+%   - kon: on-rate in pMHC/TCR binding,
+%   - koff: off-rate in pMHC/TCR binding.
+% -------------------------------------------------------------------------
+
+%% -------------------------------------------------------------------------
+% 0. Preliminaries
+% -------------------------------------------------------------------------
+
+% Add paths to function folders
+p = path;
+path(p,'insProb_functions')
+%path(path,'insProb_results')
+path(path,'louis_results')
+path(path, 'dyn_models')
+path(path, 'dyn_models_NP')
+path(path, 'dist_fitting')
+
+% Define variables
+r = r;              % Radius of NP (nm)
+v = v;              % Valence of NP                 (r,v) pairs: [14; 8,11,14,21]   [20;9,13,61,200]
+d = 1.5;           % NP Dose
+%kon = kon;          % pMHC-TCR binding rate
+koff = 25;          % pMHC-TCR unbinding rate
+kon = koff/kd;    % Monovalent dissociative constant
+
+nNC = 5000;         % Number of NC
+
+KON = kon;          % NP arrival time to contact area
+KOFF = 10;          % NP departure time from contact area
+
+%Define Effective Cap and Contact Area
+theta_deg = theta_deg;                     %Angles considered: [10,20,30,40,45,50,60,70,80,90] Additional: [25,32,35,37,42,47,52]
+%theta = pi / 4;
+theta = theta_deg * pi / 180;
+rc = r * sin(theta);                %Radius of contact area on Tcell surface
+SAeff = 2*pi*(r^2)*(1-cos(theta));  %Effective surface area of NP 
+SAtot = 4*pi*(r^2);                 %Total surface area of NP
+Acont = pi * r ^ 2;                 %Contact area on Tcell Surface
+vh = round(SAeff * v / SAtot);      %Effective valency of NP
+
+nTCR = ntcr;                        %Number of TCR per NC: [20,50,100]
+dTCR = dtcr;                        %Min distance between TCR: [0.2,1,5]
+rnbh = rnbh;                        %Region defining 'neighbor pts'
+
+
+%% -------------------------------------------------------------------------
+% I. Computation of the insertion probability
+% -------------------------------------------------------------------------
+%% Insertion Probability of NP onto TCRnc
+
+insProbNPFileName = ['insprobNP_r',num2str(r)];
+%pp = ['louis_results\Angle\theta',num2str(theta_deg),'\'];
+%pp = ['louis_temp\theta',num2str(theta_deg),'\'];
+%pp = ['louis_results/dTCR10/Test IP/'];
+%pp = ['louis_results/dTCR10/New IP/'];
+
+if exist([pp,insProbNPFileName,'.mat'])
+    load([pp,insProbNPFileName,'.mat']);
+   
+else
+    disp('Calculating IP of NP onto TCRnc...')
+
+    insProbNPtoNC = compute_piaNP(r, rc, nTCR, dTCR);               %Prob of NP binding to NC after ith bound NP
+    simdist = 50000;                                                %Num of simulations; ideally 50k -500k
+    mx = length(insProbNPtoNC);                                     %NP capacity of TCRnc
+
+    disp('Done.')
+    disp('Calculating distribition of covered TCRs...')
+
+    % ith element of distCov is covered TCR distribution of ith NP
+    [distCov, probBindNPi] = distCovTCR2(r,nTCR,dTCR,simdist,mx);
+
+    disp('Done.')
+    
+    save([pp,insProbNPFileName,'.mat'], 'insProbNPtoNC','distCov','probBindNPi');
+
+end
+%% Insertion Probability of TCR onto NP
+
+insProbFileName = ['insprob_r',num2str(r),'_v',num2str(v)];
+if exist([pp,insProbFileName,'.mat'])
+    load([pp,insProbFileName,'.mat']);
+
+else
+    disp('Calculating IP of TCR onto NP...')
+    insProbTCRtoNP = compute_pia(r,rc,vh,dTCR,rnbh);
+    disp('Done.')
+    
+    save([pp,insProbFileName,'.mat'],'insProbTCRtoNP');
+end
+
+%% -------------------------------------------------------------------------
+% II. Model steady states
+% -------------------------------------------------------------------------
+% Steady states and average dwell time for contact area model
+
+
+
+% Determine the carrying capacities of nano-clusters ......................
+    M = 1;
+    Mvec = M*probBindNPi(:);
+    
+% 1. Find the maximum number of TCR that can be bound by a single NP.......
+    maxTCRcov = 1;
+    for i = 1:length(distCov)
+        maxTCRcov = max(maxTCRcov,length(distCov{i}));
+    end
+    
+% 2. Compute the unbinding time and the average number of bound TCR per NP
+    avgs_contAreaModel = dynsys_means(koff/kd,koff,v,vh,maxTCRcov,insProbTCRtoNP);
+    backwardRate = unbindingRate(distCov,avgs_contAreaModel(:,3));
+    
+%% ------------------------------------------------------------------------
+% Find the steady state from the nano-cluster model
+% -------------------------------------------------------------------------
+
+
+    data=get_ifndata(r);
+    
+    for i = find(data(:,1) == v)'
+        Dose = data(i,2);
+        if exist([pp,'Continuation_Results/contKdSteady_r',num2str(r),'v',num2str(v),'d',num2str(data()),'.mat']) ~= 7
+            louis_continuation(r,v,Dose,theta_deg,pp);
+        end
+    end
+ %{
+    stStateNC = louis_stState_ncModel(kon,koff,KON,KOFF,backwardRate,Mvec,r,v,d,pp);
+    stStateNC =  stStateNC/sum(stStateNC);  
+  %}
+%% ------------------------------------------------------------------------
+% Finding average number of bound TCR
+% -------------------------------------------------------------------------
+
+    % Determine the average number of bound TCR per TCRnc based on the
+    % order of binding (i.e. #bound by first, second etc)
+    bdNumber = [];
+    for i = 1:length(distCov)
+        bdNumber = [bdNumber, distCov{i}*avgs_contAreaModel(1:length(distCov{i}),2)];
+    end
+    % Sum to find total bound number per NC with j NPs attached
+    cum_bdNumber = cumsum(bdNumber);
+    
+    % Average bound per NC
+ %   convAvg = stStateNC(2:end)'*bdNumber(:)/sum(stStateNC(2:end));
+
+%}
+    
+%% -------------------------------------------------------------------------
+% III. Distribution fitting
+% -------------------------------------------------------------------------
+% Fitting a gamma distribution with common parameter beta for all
+% distributions. (Alternatively, can fit a general distribution and
+% manually compute the convolutions)
+
+%{
+disp('Fitting Gamma distribution...')
+
+[alphas, beta]  = dist_fit_gamma(distCov,avgs_contAreaModel(:,2),'Gamma');  %Can fit either 'Gamma' or 'Normal'
+
+
+% Determine the parameters for the distribution of bound TCR on T - cell
+% (additive because addition of gammas)
+totalDistNC = round(nNC*stStateNC);
+alpha = alphas'*totalDistNC(2:end);
+
+
+    
+%alphas = cumsum(alphas);
+%alpha = alphas'*Mtot*stStateNC(2:end);
+
+disp('Done.')
+
+
+%{
+DTCR = [0.1,0.15,0.2,0.25,0.3,0.4,0.5,1.0,2.0,3.0,4.0,5.0];
+
+if exist(['dtcr_analysis_r',num2str(r),'_v',num2str(v),'.mat']) == 2
+    load(['dtcr_analysis_r',num2str(r),'_v',num2str(v),'.mat'])
+    
+    for i=1:length(DTCR)
+        if DTCR(i) == dTCR
+            ave_bnd(i) = alpha * beta;
+            var_bnd(i) = alpha * (beta ^ 2);
+        end
+    end
+else
+    ave_bnd = ones(length(DTCR),1);
+    var_bnd = ones(length(DTCR),1);
+    for i=1:length(DTCR)
+        if DTCR(i) == dTCR
+            ave_bnd(i) = alpha * beta;
+            var_bnd(i) = alpha * (beta ^ 2);
+        end
+    end
+end
+
+save(['dtcr_analysis_r',num2str(r),'_v',num2str(v),'.mat'], 'DTCR', 'ave_bnd', 'var_bnd')
+
+%}
+
+%% -------------------------------------------------------------------------
+% IV. Summary
+% -------------------------------------------------------------------------
+
+%Plot distribution of total number of bound TCR
+
+
+
+FigName = ['dist_bndTCR_r',num2str(r),'_v',num2str(v)];
+mx_plot = 3*alpha*beta;
+
+figure
+%foo=length(avgs_contAreaModel(:,3)); % the right value to use
+foo=length(0:5:mx_plot);
+plot(0:5:mx_plot,pdf('gamma',(0:5:mx_plot),alpha,beta),'linewidth',1.5)
+xlabel('total nb of bound TCR')
+ylabel('density')
+
+%savefig([pp, FigName,'.fig'])
+
+
+
+disp(bdNumber);
+x = linspace(1,length(bdNumber),length(bdNumber));
+
+
+figname = ['bdTCRs_perNP_r',num2str(r),'_v',num2str(v)];
+pp2 = ['C:\Users\louis\Desktop\McGill\Khadra Research\np_dependent_activation_project_02122018\project_code\louis_figs\Paper-Final_Figures\BoundTCRs\dTCR3_nTCR',num2str(ntcr),'\'];
+
+f = figure('visible','off');
+
+yyaxis left
+plot(x,bdNumber,'x-','linewidth',1);
+ylabel('TCRs Bound to Last NP');
+
+yyaxis right
+plot(x, cum_bdNumber,'x-','linewidth',1)
+ylabel('Total Bound TCRs');
+xlabel('Number of NPs Bound to NC');
+title(['Bound TCRS for r=',num2str(r),', v=', num2str(v)])
+ax = gca;
+ax.FontSize = 16;
+
+%print([pp2, figname],'jpg');
+saveas(f, [pp2, figname],'jpg');
+
+%}
+%% -------------------------------------------------------------------------
+% V. Function Results
+% --------------------------------------------------------------------------
+%{
+avgbd_result = avgs_contAreaModel(:,2);
+time_result  = avgs_contAreaModel(:,3);
+stdy_result  = stStateNC;
+dist_result  = [alpha, beta]; % [insProbNPtoNC]; 
+%}
+end
