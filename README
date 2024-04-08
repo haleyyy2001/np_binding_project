@@ -1,0 +1,34 @@
+How to run NP project Code
+
+-----REPRODUCING RESULTS------
+Run louis_comp_function.m to generate .mat files containing the CAM and TNM insertion probabilities as well as the distribution of covered TCRs.
+Relevant functions for the MC simulations (compute_pia, compute_piaNP, distCovTCR2) are contained in the folder insProb_functions.
+
+louis_comp_function.m will then compute the steady states of the CAM and calculate the average dwell time of NPs. This step calls the functions dynsys_means.m and unbindingRate.m contained in the folers dyn_models and dyn_models_NP respectively.
+
+Finally, louis_comp_function.m will also perform the parameter continuation method for the steady states of the TNM. This is performed using louis_continuation.m, which calls the functions continuation.m and newtonZeros.m in the folder zeroNewton.
+
+----T-CELL ACTIVATION and IFNg PRODUCTION------
+louis_activationFunction.m imports the insertion probabilities and continuation method results generated above to estimate the distribution of bound TCRs per T-cell. It does so using the function dist_fit_gamma.m contained in the folder dist_fitting.
+
+It then calls the function ifngProd.m (in the folder ifngProd) to determine the production of IFNg as a function of bound TCRs.
+
+----MCMC PARAMETER ESTIMATION----
+louis_scriptMCMC.m imports the experimental data using get_IFNdata.m (in the folder ifngProd) and will attempt to fit the output of louis_activationFunction.m to this data. Fit parameters and MCMC options are all defined in this file.
+
+The MCMC fitting attempts to minimize the Sum-of-squares error defined in louis_errorFunction.m
+
+IMPORTANT: The paths defined in louis_scriptMCMC.m and louis_errorFunction.m have to correspond to the same directory containing the insertion probabilities.
+
+----Generating Figures-------
+For reproducing the figures in the paper, these are all contained in the following files:
+
+louis_activationPlots.m		-> 	IFNg dose-response curves for model prediction and experimental data.
+louis_AnglePlots.m			->	Effective valence as function of contact area angle.
+louis_ContinuationPlots.m		->	Outcomes of the continuation method for steady states of the TNM.
+louis_coopPlots.m			-> 	CAM Cooperativity.
+louis_distributionPLots.m		->	Distributions of bound TCRs per TCRnc.
+louis_dwellTimePlots.m			->	CAM NP dwell times.
+louis_IFNgPlots.m			-> 	IFNg activation curve.
+louis_IPplots.m			-> 	Insertion probabilities of CAM and TNM as well as distribution of covered TCRs per NP.
+louis_levelCurves.m			-> 	IFNg level curves ploted in the space of NP dose and NP valence.
